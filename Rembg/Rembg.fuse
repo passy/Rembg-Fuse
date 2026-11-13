@@ -305,9 +305,12 @@ function NotifyChanged(inp, param, time)
                 pyexe = "python"
             end
 
+            local venvPy = FindVenvPython(self.Comp, "pythonw.exe")
             if isWindows then
-                pyexe = FindVenvPython(self.Comp, "pythonw.exe") or pyexe
-                command = 'start "" /MIN "' .. pyexe .. '" "' .. setupPath .. '"'
+                command = 'start "" /MIN "' .. (venvPy or pyexe) .. '" "' .. setupPath .. '"'
+            elseif venvPy then
+                -- Absolute interpreter path: no login shell needed; run in background
+                command = '"' .. venvPy .. '" "' .. setupPath .. '" &'
             elseif isMac then
                 command = '/bin/zsh -l -c "' .. pyexe .. ' \\"' .. setupPath .. '\\""'
             elseif isLinux then
@@ -340,9 +343,15 @@ function NotifyChanged(inp, param, time)
     end
 end
 
--- Returns the interpreter inside the .venv next to the fuse (Windows), or nil.
-function FindVenvPython(comp, exe)
-    local path = comp:MapPath("Fuses:/Rembg/.venv/Scripts/" .. exe):gsub("/", "\\")
+-- Returns the interpreter inside the .venv next to the fuse, or nil.
+-- winExe picks python.exe or pythonw.exe on Windows; macOS/Linux use bin/python.
+function FindVenvPython(comp, winExe)
+    local path
+    if package.config:sub(1, 1) == "\\" then
+        path = comp:MapPath("Fuses:/Rembg/.venv/Scripts/" .. winExe):gsub("/", "\\")
+    else
+        path = comp:MapPath("Fuses:/Rembg/.venv/bin/python")
+    end
     if bmd.fileexists(path) then
         return path
     end
@@ -573,10 +582,14 @@ function ProcessWithPython(inputImage, scriptPath, model, frameTime)
     end
 
     local command
+    local venvPy = FindVenvPython(self.Comp, "python.exe")
     if isWindows then
-        pyexe = FindVenvPython(self.Comp, "python.exe") or pyexe
         command = string.format('"%s" "%s" "%s" "%s" "%s"',
-            pyexe, scriptPath, inputImagePath, outputImagePath, model)
+            venvPy or pyexe, scriptPath, inputImagePath, outputImagePath, model)
+    elseif venvPy then
+        -- Absolute interpreter path, so no login shell is needed to find Python
+        command = string.format('"%s" "%s" "%s" "%s" "%s" 2>&1',
+            venvPy, scriptPath, inputImagePath, outputImagePath, model)
     elseif isMac then
         command = string.format('/bin/zsh -l -c "%s \\"%s\\" \\"%s\\" \\"%s\\" \\"%s\\" 2>&1"',
             pyexe, scriptPath, inputImagePath, outputImagePath, model)
