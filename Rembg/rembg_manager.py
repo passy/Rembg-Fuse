@@ -46,6 +46,7 @@ def _point_tcl_at_base_python():
 _point_tcl_at_base_python()
 
 import io
+import queue
 import shutil
 import subprocess
 import threading
@@ -131,35 +132,23 @@ def install_rembg(option, callback):
     threading.Thread(target=run).start()
 
 
-def download_model(model_name, done_callback, self):
+def download_model(model_name):
     """
-    Triggers model download using the rembg library's internal functions.
-    This is more robust than using subprocess.
+    Download (or verify) a model using rembg's own session loader.
+    Blocking; call it from a worker thread. Returns None on success,
+    otherwise a short error message.
     """
+    try:
+        import rembg
 
-    def run():
-        try:
-            import rembg
-
-            print(f"Attempting to download model: {model_name}...")
-            self.is_installing = True
-            rembg.new_session(model_name)
-            print(f"Successfully downloaded or verified model: {model_name}")
-            done_callback(True)
-            self.is_installing = False
-            messagebox.showinfo(
-                "Download Complete", f"Model '{model_name}' downloaded successfully."
-            )
-        except Exception as e:
-            print(f"Failed to download model '{model_name}': {e}")
-            done_callback(False)
-            self.is_installing = False
-            messagebox.showerror(
-                "Download Failed",
-                f"Failed to download model '{model_name}'. Please try again.",
-            )
-
-    threading.Thread(target=run, daemon=True).start()
+        print(f"Attempting to download model: {model_name}...", flush=True)
+        rembg.new_session(model_name)
+        print(f"Successfully downloaded or verified model: {model_name}", flush=True)
+        return None
+    except Exception as e:
+        print(f"Failed to download model '{model_name}': {e}", flush=True)
+        message = str(e) or type(e).__name__
+        return message if len(message) <= 200 else message[:200] + "..."
 
 
 def check_downloaded_models():
@@ -1108,20 +1097,47 @@ class RemBGSetupApp(tk.Tk):
         self._toggle_second_page_controls(state="disabled")
         self.download_btn.config(text="Downloading...")
 
-        self.active_downloads = len(selected)
-
         for name in selected:
             pb = self.progressbars[name]
             # Set to indeterminate mode for visual feedback
             pb.config(mode="indeterminate")
             pb.start(15)  # Speed of animation
-            download_model(
-                name, lambda success, n=name: self.download_complete(n, success), self
-            )
+
+        # Download one model at a time on a worker thread. Tk is not thread-safe,
+        # so the worker only posts results to a queue that the UI thread polls.
+        self.is_installing = True
+        events = queue.Queue()
+
+        def worker():
+            for name in selected:
+                events.put((name, download_model(name)))
+            events.put(None)  # all done
+
+        threading.Thread(target=worker, daemon=True).start()
+        self._poll_downloads(events, {})
+
+    def _poll_downloads(self, events, failed):
+        """Apply download results on the UI thread; reschedules itself until done."""
+        try:
+            while True:
+                item = events.get_nowait()
+                if item is None:
+                    self.downloads_finished(failed)
+                    return
+                name, error = item
+                if error:
+                    failed[name] = error
+                self.download_complete(name, error is None)
+        except queue.Empty:
+            pass
+        self.after(100, self._poll_downloads, events, failed)
 
     def open_model_folder(self):
         home_dir = Path.home()
-        models_dir = home_dir / ".u2net"
+        # Current rembg stores models in ~/.rembg/models; older versions used ~/.u2net
+        models_dir = home_dir / ".rembg" / "models"
+        if not models_dir.is_dir():
+            models_dir = home_dir / ".u2net"
 
         # Check if the models directory exists
         if models_dir.exists() and models_dir.is_dir():
@@ -1136,27 +1152,30 @@ class RemBGSetupApp(tk.Tk):
                 messagebox.showerror("Error", f"Could not open model folder: {e}")
 
     def download_complete(self, model_name, success):
-        self.active_downloads -= 1
-
+        """Update one model's progress bar (UI thread only, no popups)."""
         pb = self.progressbars[model_name]
         pb.stop()
-        pb.config(mode="determinate")
-
+        pb.config(mode="determinate", value=100 if success else 0)
         if success:
-            pb.config(value=100)
             self.downloaded_models.add(model_name)
-        else:
-            pb.config(value=0)
-            messagebox.showwarning(
-                "Download Failed",
-                f"Failed to download model: {model_name}. Please check your internet connection.",
-            )
 
-        # When all downloads are finished, re-enable button and refresh the page
-        if self.active_downloads == 0:
-            messagebox.showinfo("Downloads Finished", "Model downloads are complete.")
-            self.create_second_page()
-            self.downloaded_models = check_downloaded_models()
+    def downloads_finished(self, failed):
+        """Refresh the page and show a single summary popup."""
+        self.is_installing = False
+        self.downloaded_models = check_downloaded_models()
+        self.create_second_page()
+
+        if failed:
+            details = "\n".join(f"- {name}: {error}" for name, error in failed.items())
+            messagebox.showwarning(
+                "Some Downloads Failed",
+                f"Could not download {len(failed)} model(s):\n\n{details}\n\n"
+                "Check your internet connection and firewall, then try again.",
+            )
+        else:
+            messagebox.showinfo(
+                "Downloads Finished", "All selected models were downloaded."
+            )
 
     # --------------------------------------------------------------------
     # TESTING UTILITY
