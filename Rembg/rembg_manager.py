@@ -116,7 +116,10 @@ def install_rembg(option, callback):
         if option == "CPU":
             pip_cmd += ["rembg[cpu,cli]"]
         elif option == "GPU":
-            pip_cmd += ["rembg[gpu,cli]"]
+            # The [cuda,cudnn] extras pull NVIDIA's runtime libraries from pip, so
+            # CUDA works without a system-wide CUDA/cuDNN install; the worker loads
+            # them with onnxruntime.preload_dlls().
+            pip_cmd += ["rembg[gpu,cli]", "onnxruntime-gpu[cuda,cudnn]"]
         elif option == "ROCm":
             pip_cmd += ["rembg[rocm,cli]"]
         else:
