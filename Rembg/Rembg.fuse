@@ -306,6 +306,7 @@ function NotifyChanged(inp, param, time)
             end
 
             if isWindows then
+                pyexe = FindVenvPython(self.Comp, "pythonw.exe") or pyexe
                 command = 'start "" /MIN "' .. pyexe .. '" "' .. setupPath .. '"'
             elseif isMac then
                 command = '/bin/zsh -l -c "' .. pyexe .. ' \\"' .. setupPath .. '\\""'
@@ -337,6 +338,15 @@ function NotifyChanged(inp, param, time)
             self:SetData("models", check_models)
         end
     end
+end
+
+-- Returns the interpreter inside the .venv next to the fuse (Windows), or nil.
+function FindVenvPython(comp, exe)
+    local path = comp:MapPath("Fuses:/Rembg/.venv/Scripts/" .. exe):gsub("/", "\\")
+    if bmd.fileexists(path) then
+        return path
+    end
+    return nil
 end
 
 function GetModels()
@@ -447,21 +457,6 @@ local function clamp255(v)
     return math.floor(v * 255 + 0.5)
 end
 
-local function SaveViaClip(img, path)
-    local ok, err = pcall(function()
-        local c = Clip(path, true)
-        if not c then error("Clip() returned nil") end
-        pcall(function() c:Open() end)
-        local r = c:PutFrame(0, img)
-        pcall(function() c:Close() end)
-        if r == false then error("PutFrame returned false") end
-    end)
-    if not ok then print("[Rembg] Clip write error: " .. tostring(err)) end
-    local f = io.open(path, "rb")
-    if f then f:close() return true end
-    return false
-end
-
 local function SaveAsPPM(img, path)
     local f, err = io.open(path, "wb")
     if not f then
@@ -482,8 +477,12 @@ local function SaveAsPPM(img, path)
     return true
 end
 
-local ffi = require("ffi")
-pcall(ffi.cdef, [[
+-- Loaded lazily: require() is not available while Resolve registers fuses at startup.
+local ffi
+local function GetFFI()
+    if ffi then return ffi end
+    ffi = require("ffi")
+    pcall(ffi.cdef, [[
 typedef struct {
     uint32_t cb; void* lpReserved; void* lpDesktop; void* lpTitle;
     uint32_t dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
@@ -498,8 +497,11 @@ int CloseHandle(void*);
 int MultiByteToWideChar(uint32_t, uint32_t, const char*, int, uint16_t*, int);
 uint32_t GetLastError(void);
 ]])
+    return ffi
+end
 
 local function toWide(s)
+    local ffi = GetFFI()
     local n = ffi.C.MultiByteToWideChar(65001, 0, s, -1, nil, 0)
     local buf = ffi.new("uint16_t[?]", n)
     ffi.C.MultiByteToWideChar(65001, 0, s, -1, buf, n)
@@ -507,6 +509,7 @@ local function toWide(s)
 end
 
 local function RunHidden(cmdline)
+    local ffi = GetFFI()
     local si = ffi.new("RB_STARTUPINFOW")
     si.cb = ffi.sizeof(si)
     local pi = ffi.new("RB_PROCESS_INFORMATION")
@@ -544,8 +547,9 @@ end
 function ProcessWithPython(inputImage, scriptPath, model, frameTime)
     local tempDir = self.Comp:MapPath("Temp:/"):gsub("[/\\]+$", "")
     local timeStamp = tostring(frameTime):gsub("%.", "_")
-    local inputImagePath  = tempDir .. "\\rembg_input_" .. timeStamp .. ".ppm"
-    local outputImagePath = tempDir .. "\\rembg_output_" .. timeStamp .. ".png"
+    local sep = package.config:sub(1, 1)
+    local inputImagePath  = tempDir .. sep .. "rembg_input_" .. timeStamp .. ".ppm"
+    local outputImagePath = tempDir .. sep .. "rembg_output_" .. timeStamp .. ".png"
 
     if not SaveAsPPM(inputImage, inputImagePath) then
         print("Failed to save input image to: " .. inputImagePath)
@@ -570,14 +574,9 @@ function ProcessWithPython(inputImage, scriptPath, model, frameTime)
 
     local command
     if isWindows then
-        -- Prefer the venv next to the fuse when it exists
-        local venvPy = self.Comp:MapPath("Fuses:/Rembg/.venv/Scripts/python.exe"):gsub("/", "\\")
-        if bmd.fileexists(venvPy) then
-            pyexe = venvPy
-        end
+        pyexe = FindVenvPython(self.Comp, "python.exe") or pyexe
         command = string.format('"%s" "%s" "%s" "%s" "%s"',
             pyexe, scriptPath, inputImagePath, outputImagePath, model)
-        -- (or your uv equivalent, e.g. '"uv" run --project "..." "%s" ...')
     elseif isMac then
         command = string.format('/bin/zsh -l -c "%s \\"%s\\" \\"%s\\" \\"%s\\" \\"%s\\" 2>&1"',
             pyexe, scriptPath, inputImagePath, outputImagePath, model)
@@ -586,7 +585,7 @@ function ProcessWithPython(inputImage, scriptPath, model, frameTime)
             pyexe, scriptPath, inputImagePath, outputImagePath, model)
     end
 
-    local logPath = tempDir .. "\\rembg_log_" .. timeStamp .. ".txt"
+    local logPath = tempDir .. sep .. "rembg_log_" .. timeStamp .. ".txt"
     local result, runErr = RunCommand(command, logPath)
     local executionSuccess = false
     local f = io.open(outputImagePath, "rb")
@@ -629,6 +628,7 @@ function ProcessWithPython(inputImage, scriptPath, model, frameTime)
     -- Clean up temporary files
     pcall(function() os.remove(inputImagePath) end)
     pcall(function() os.remove(outputImagePath) end)
+    pcall(function() os.remove(logPath) end)
 
     return processedImage
 end

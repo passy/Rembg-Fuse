@@ -14,21 +14,18 @@ import os
 import sys
 import tempfile
 
-_log = open(
-    os.path.join(tempfile.gettempdir(), "rembg_fuse.log"),
-    "a",
-    encoding="utf-8",
-    buffering=1,
-)
-sys.stdout = _log
-sys.stderr = _log
+# pythonw.exe has no stdout/stderr: fall back to a log file in the temp dir.
+# Otherwise print normally so the fuse can show the output in the Fusion console.
+if sys.stdout is None or sys.stderr is None:
+    _log = open(
+        os.path.join(tempfile.gettempdir(), "rembg_fuse.log"),
+        "a",
+        encoding="utf-8",
+        buffering=1,
+    )
+    sys.stdout = sys.stdout or _log
+    sys.stderr = sys.stderr or _log
 print("=== started ===", sys.executable, sys.argv)
-
-# Handle pythonw.exe environment where stdout and stderr are None
-if sys.stdout is None:
-    sys.stdout = open(os.devnull, "w", encoding="utf-8")
-if sys.stderr is None:
-    sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 import time
 
@@ -200,11 +197,6 @@ def main():
 
     log_main("[START] REMBG Script Started")
 
-    input_path = sys.argv[1]
-    output_path = sys.argv[2]
-    input_path = sys.argv[1]
-    output_path = sys.argv[2]
-    model_name = sys.argv[3]
     if not os.path.exists(input_path):
         log_main(f"[ERROR] Input file does not exist: {input_path}")
         sys.exit(1)
@@ -214,7 +206,6 @@ def main():
         log_main("[INIT] Initializing REMBG...")
         bg_remover = FuseBackgroundRemover(model_name)
 
-        # Process the image
         # Process the image
         success = bg_remover.process_image(input_path, output_path)
         if success:
