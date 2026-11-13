@@ -1,3 +1,0 @@
-isnet-general-use
-u2net_human_seg
-u2netp

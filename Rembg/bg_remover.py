@@ -10,8 +10,19 @@ This script uses the rembg library to remove backgrounds from images.
 It is designed to be used within the DaVinci Resolve Fusion environment.
 """
 
-import sys
 import os
+import sys
+import tempfile
+
+_log = open(
+    os.path.join(tempfile.gettempdir(), "rembg_fuse.log"),
+    "a",
+    encoding="utf-8",
+    buffering=1,
+)
+sys.stdout = _log
+sys.stderr = _log
+print("=== started ===", sys.executable, sys.argv)
 
 # Handle pythonw.exe environment where stdout and stderr are None
 if sys.stdout is None:
@@ -20,26 +31,28 @@ if sys.stderr is None:
     sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 import time
+
 import rembg
 from PIL import Image
 
 # Set UTF-8 encoding for better compatibility
 if sys.platform == "win32":
     try:
-        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stdout.reconfigure(encoding="utf-8")
     except:
         pass
 
+
 class FuseBackgroundRemover:
-    def __init__(self, model_name='u2netp'):
+    def __init__(self, model_name="u2netp"):
         """Initialize rembg with specified model"""
 
-        self.log("="*50)
+        self.log("=" * 50)
         self.log(f"Loading background removal model: {model_name}")
-        
+
         # Check GPU availability and configure providers
         self._check_and_configure_gpu()
-        
+
         try:
             # Use providers parameter to enable GPU if available
             self.session = rembg.new_session(model_name, providers=self.providers)
@@ -49,111 +62,122 @@ class FuseBackgroundRemover:
         except Exception as e:
             self.log(f"[ERROR] Error loading model {model_name}: {e}")
             self.log("[WARNING] Falling back to u2netp model")
-        
+
             try:
-                self.session = rembg.new_session('u2netp', providers=self.providers)
+                self.session = rembg.new_session("u2netp", providers=self.providers)
                 self.log("[SUCCESS] Fallback model loaded successfully!")
             except Exception as fallback_error:
-                self.log(f"[CRITICAL] Critical error: Could not load any model: {fallback_error}")
+                self.log(
+                    f"[CRITICAL] Critical error: Could not load any model: {fallback_error}"
+                )
                 raise fallback_error
-    
+
     def _check_and_configure_gpu(self):
         """Check GPU availability and configure ONNX Runtime providers"""
         try:
             import onnxruntime as ort
+
             available_providers = ort.get_available_providers()
             self.log(f"[INFO] Available ONNX providers: {available_providers}")
-            
+
             # Priority order: TensorRT (best for RTX) > CUDA > ROCm > CPU
             self.providers = []
             gpu_found = False
-            
-            if 'CUDAExecutionProvider' in available_providers:
-                self.providers.append('CUDAExecutionProvider')
+
+            if "CUDAExecutionProvider" in available_providers:
+                self.providers.append("CUDAExecutionProvider")
                 self.log("[INFO] GPU detected: NVIDIA CUDA will be used")
                 gpu_found = True
-            elif 'ROCMExecutionProvider' in available_providers:
-                self.providers.append('ROCMExecutionProvider')
+            elif "ROCMExecutionProvider" in available_providers:
+                self.providers.append("ROCMExecutionProvider")
                 self.log("[INFO] GPU detected: AMD ROCm will be used")
                 gpu_found = True
-            
+
             # Always add CPU as fallback
-            self.providers.append('CPUExecutionProvider')
-            
+            self.providers.append("CPUExecutionProvider")
+
             if not gpu_found:
                 self.log("[WARNING] No GPU detected! Using CPU only (slow)")
                 self.log("[WARNING] Make sure you have onnxruntime-gpu installed")
                 self.log("[WARNING] Run: pip install onnxruntime-gpu")
-                
+
         except ImportError:
             self.log("[WARNING] onnxruntime not properly installed")
             self.providers = None  # Let rembg use default
         except Exception as e:
             self.log(f"[WARNING] GPU configuration error: {e}")
             self.providers = None  # Let rembg use default
-    
+
     def log(self, message):
         """Print log message with timestamp and flush immediately."""
         timestamp = time.strftime("%H:%M:%S", time.localtime())
         try:
             print(f"[{timestamp}] {message}")
-            sys.stdout.flush()  
+            sys.stdout.flush()
         except UnicodeEncodeError:
             # Fallback for encoding issues
             print(f"[{timestamp}] {message.encode('ascii', 'ignore').decode('ascii')}")
             sys.stdout.flush()
-    
+
     def process_image(self, input_path, output_path):
         """Remove background from image file."""
         try:
             # Log processing start
-            self.log("-"*50)
+            self.log("-" * 50)
             self.log(f"[INPUT] Input path: {input_path}")
             self.log(f"[OUTPUT] Output path: {output_path}")
-            
+
             # Check if input file exists
             if not os.path.exists(input_path):
                 self.log(f"[ERROR] Input file does not exist: {input_path}")
                 return False
-            
+
             # Load image
             self.log("[STEP 1/4] Loading image...")
             pil_image = Image.open(input_path)
-            self.log(f"Image loaded: {pil_image.size[0]}x{pil_image.size[1]} pixels, mode: {pil_image.mode}")
-            
+            self.log(
+                f"Image loaded: {pil_image.size[0]}x{pil_image.size[1]} pixels, mode: {pil_image.mode}"
+            )
+
             # Ensure RGB mode for processing
-            if pil_image.mode != 'RGB':
+            if pil_image.mode != "RGB":
                 self.log(f"[STEP 2/4] Converting from {pil_image.mode} to RGB...")
-                pil_image = pil_image.convert('RGB')
+                pil_image = pil_image.convert("RGB")
             else:
                 self.log("[STEP 2/4] Image already in RGB mode")
-            
+
             # Remove background
             self.log("[STEP 3/4] Running background removal AI model...")
             start_time = time.time()
-            
+
             result = rembg.remove(pil_image, session=self.session)
-            
+
             processing_time = time.time() - start_time
-            self.log(f"[SUCCESS] Background removal completed in {processing_time:.2f} seconds")
-            self.log(f"[INFO] Output image: {result.size[0]}x{result.size[1]} pixels, mode: {result.mode}")
+            self.log(
+                f"[SUCCESS] Background removal completed in {processing_time:.2f} seconds"
+            )
+            self.log(
+                f"[INFO] Output image: {result.size[0]}x{result.size[1]} pixels, mode: {result.mode}"
+            )
             # Save with transparency (PNG)
             result.save(output_path, "PNG")
-            self.log(f"[SUCCESS] Saved with transparency: {os.path.basename(output_path)}")
+            self.log(
+                f"[SUCCESS] Saved with transparency: {os.path.basename(output_path)}"
+            )
             # Verify output file was created
             if not os.path.exists(output_path):
                 self.log("[ERROR] Output file generation failed!")
                 return False
-            self.log("-"*50)
+            self.log("-" * 50)
             return True
-            
+
         except Exception as e:
             self.log(f"[ERROR] Error processing image: {e}")
             self.log(f"[ERROR] Exception type: {type(e).__name__}")
             return False
 
-def main():
 
+def main():
     def log_main(message):
         """Log messages with timestamp for the main script."""
         timestamp = time.strftime("%H:%M:%S", time.localtime())
@@ -161,9 +185,19 @@ def main():
             print(f"[{timestamp}] MAIN: {message}")
             sys.stdout.flush()
         except UnicodeEncodeError:
-            print(f"[{timestamp}] MAIN: {message.encode('ascii', 'ignore').decode('ascii')}")
+            print(
+                f"[{timestamp}] MAIN: {message.encode('ascii', 'ignore').decode('ascii')}"
+            )
             sys.stdout.flush()
-    
+
+    if len(sys.argv) < 4:
+        log_main(
+            f"[ERROR] Expected 3 arguments (input, output, model), got: {sys.argv[1:]}"
+        )
+        sys.exit(1)
+
+    input_path, output_path, model_name = sys.argv[1], sys.argv[2], sys.argv[3]
+
     log_main("[START] REMBG Script Started")
 
     input_path = sys.argv[1]
@@ -174,12 +208,12 @@ def main():
     if not os.path.exists(input_path):
         log_main(f"[ERROR] Input file does not exist: {input_path}")
         sys.exit(1)
-    
+
     # Initialize background remover
     try:
         log_main("[INIT] Initializing REMBG...")
         bg_remover = FuseBackgroundRemover(model_name)
-        
+
         # Process the image
         # Process the image
         success = bg_remover.process_image(input_path, output_path)
@@ -189,12 +223,13 @@ def main():
         else:
             log_main("[FAILED] Background removal failed!")
             sys.exit(1)
-            
+
     except Exception as e:
         log_main(f"[FATAL] Fatal error: {e}")
         log_main(f"[FATAL] Exception type: {type(e).__name__}")
         log_main("[CHECK] Check your Python environment and dependencies")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

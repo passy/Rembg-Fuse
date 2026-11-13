@@ -1,0 +1,4 @@
+# Generated at runtime inside the installed Fuses:/Rembg folder
+Rembg/python_path.txt
+Rembg/.venv/
+__pycache__/

@@ -9,7 +9,7 @@ Fuse Category: Effect
 Description: Background removal using rembg Python library
 Author URL: www.akascape.com
 --------------------------------------------------------------
---]]--
+--]] --
 
 version = 0.5
 fuse_data = [=[
@@ -18,7 +18,7 @@ This is a Fuse for DaVinci Resolve that uses the rembg Python library to remove 
 Repo Link: https://github.com/Akascape/Rembg-Fuse
 License: MIT Copyright (c) 2026 Akascape
 
-Contributors: 
+Contributors:
 Akash Bora
 
 How to use:
@@ -69,7 +69,6 @@ Logo_Image = [[
 ]]
 
 function Create()
-
     InImage1 = self:AddInput("Image", "Image", {
         LINKID_DataType = "Image",
         LINK_Main = 1,
@@ -103,8 +102,8 @@ function Create()
         INP_Integer = true,
         INP_DoNotifyChanged = true,
     })
-    
-    InBackground_R = self:AddInput("Red", "Background_R",{
+
+    InBackground_R = self:AddInput("Red", "Background_R", {
         LINKID_DataType = "Number",
         INPID_InputControl = "ColorControl",
         INP_MinScale = 0.0,
@@ -116,7 +115,7 @@ function Create()
         IC_Visible = false,
     })
 
-    InBackground_G = self:AddInput("Green", "Background_G",{
+    InBackground_G = self:AddInput("Green", "Background_G", {
         LINKID_DataType = "Number",
         INPID_InputControl = "ColorControl",
         INP_MinScale = 0.0,
@@ -128,7 +127,7 @@ function Create()
         IC_Visible = false,
     })
 
-    InBackground_B = self:AddInput("Blue", "Background_B",{
+    InBackground_B = self:AddInput("Blue", "Background_B", {
         LINKID_DataType = "Number",
         INPID_InputControl = "ColorControl",
         INP_MinScale = 0.0,
@@ -142,21 +141,21 @@ function Create()
 
     InProgress = self:AddInput("Status", "Status", {
         LINKID_DataType = "Text",
-        INPID_InputControl= "TextEditControl",
-        TEC_Lines = 1, 
+        INPID_InputControl = "TextEditControl",
+        TEC_Lines = 1,
         TEC_Wrap = true,
-        TEC_ReadOnly = true, 
-        TEC_CharLimit = 40, 
-        TEC_DeferSetInputs = true, 
+        TEC_ReadOnly = true,
+        TEC_CharLimit = 40,
+        TEC_DeferSetInputs = true,
         INP_External = false,
         INP_Passive = true,
     })
 
     InSetup = self:AddInput("Open Rembg Setup", "OpenSetup", {
-        LINKID_DataType = "Number",
-        INPID_InputControl = "ButtonControl",
-        INP_External = false,
-        INP_Passive = true,
+        LINKID_DataType     = "Number",
+        INPID_InputControl  = "ButtonControl",
+        INP_External        = false,
+        INP_Passive         = true,
         INP_DoNotifyChanged = true,
     })
 
@@ -188,7 +187,7 @@ function Create()
 
     self:AddControlPage("Help")
 
-    InAbout =  self:AddInput("Made by Akascape | Version: "..tostring(version), "about_main", {
+    InAbout = self:AddInput("Made by Akascape | Version: " .. tostring(version), "about_main", {
         LINKID_DataType    = "Text",
         INPID_InputControl = "LabelControl",
         INP_External       = false,
@@ -198,16 +197,16 @@ function Create()
 
     InHelp = self:AddInput("", "help_box", {
         LINKID_DataType = "Text",
-        INPID_InputControl= "TextEditControl",
-        TEC_Lines = 18, 
+        INPID_InputControl = "TextEditControl",
+        TEC_Lines = 18,
         TEC_Wrap = true,
         ICD_Width = 1,
-        TEC_ReadOnly = true, 
-        TEC_DeferSetInputs = true, 
+        TEC_ReadOnly = true,
+        TEC_DeferSetInputs = true,
         INP_External = false,
         INP_Passive = true,
     })
-    
+
     InDisableLogging = self:AddInput("Disable Logging", "DisableLogging", {
         LINKID_DataType = "Number",
         INPID_InputControl = "CheckboxControl",
@@ -218,11 +217,11 @@ function Create()
     })
 
     InTroubleshoot = self:AddInput("Troubleshooting", "OpenTroubleshoot", {
-        LINKID_DataType = "Number",
+        LINKID_DataType    = "Number",
         INPID_InputControl = "ButtonControl",
-        INP_External = false,
-        INP_Passive = true,
-        BTNCS_Execute  = [=[
+        INP_External       = false,
+        INP_Passive        = true,
+        BTNCS_Execute      = [=[
             local url = "https://github.com/Akascape/Rembg-Fuse/wiki/Troubleshooting-Guide"
             bmd.openurl(url)
         ]=],
@@ -233,11 +232,9 @@ function Create()
         LINKID_DataType = "Image",
         LINK_Main = 1,
     })
-
 end
 
 function NotifyChanged(inp, param, time)
-
     -- Save/load Python path like ffmpeg
     if inp == InPython then
         local python_location = self.Comp:MapPath('Fuses:/Rembg/python_path.txt')
@@ -281,20 +278,20 @@ function NotifyChanged(inp, param, time)
 
     if inp == InTransparency then
         if param.Value == 0 then
-            InBackground_B:SetAttrs({IC_Visible = true})
-            InBackground_G:SetAttrs({IC_Visible = true})
-            InBackground_R:SetAttrs({IC_Visible = true})
+            InBackground_B:SetAttrs({ IC_Visible = true })
+            InBackground_G:SetAttrs({ IC_Visible = true })
+            InBackground_R:SetAttrs({ IC_Visible = true })
         else
-            InBackground_B:SetAttrs({IC_Visible = false})
-            InBackground_G:SetAttrs({IC_Visible = false})
-            InBackground_R:SetAttrs({IC_Visible = false})
+            InBackground_B:SetAttrs({ IC_Visible = false })
+            InBackground_G:SetAttrs({ IC_Visible = false })
+            InBackground_R:SetAttrs({ IC_Visible = false })
         end
     end
 
     if inp == InSetup then
         if param.Value == 1 then
             local setupPath = self.Comp:MapPath('Fuses:/Rembg/rembg_manager.py')
-            print("Running script: "..setupPath)
+            print("Running script: " .. setupPath)
 
             local command
             local isWindows = os.getenv("OS") and string.find(os.getenv("OS"), "Windows")
@@ -309,13 +306,13 @@ function NotifyChanged(inp, param, time)
             end
 
             if isWindows then
-                command = 'start /B /MIN '.. pyexe .. ' "' .. setupPath .. '"'
+                command = 'start "" /MIN "' .. pyexe .. '" "' .. setupPath .. '"'
             elseif isMac then
                 command = '/bin/zsh -l -c "' .. pyexe .. ' \\"' .. setupPath .. '\\""'
             elseif isLinux then
                 command = pyexe .. ' "' .. setupPath .. '"'
             end
-            
+
             if setupPath then
                 os.execute(command)
             else
@@ -323,8 +320,7 @@ function NotifyChanged(inp, param, time)
             end
         end
 
-        if param.Value==0 then
-
+        if param.Value == 0 then
             local available_models = self:GetData("models") or {}
             if #available_models > 0 then
                 return
@@ -333,7 +329,7 @@ function NotifyChanged(inp, param, time)
             local check_models = GetModels()
             if #check_models > 0 then
                 -- Iterate through the current models
-                InHelp:SetSource(Text(fuse_data), 0,0)
+                InHelp:SetSource(Text(fuse_data), 0, 0)
                 for _, model in ipairs(check_models) do
                     InModel:SetAttrs({ CCS_AddString = model })
                 end
@@ -369,12 +365,11 @@ end
 logging_off = 1
 
 function Process(req)
-    
     local framerate = self.Comp:GetPrefs("Comp.FrameFormat.Rate")
     local pythonScriptPath = self.Comp:MapPath('Fuses:/Rembg/bg_remover.py')
     local modelIndex = InModel:GetValue(req).Value or 0
     local keepTransparency = InTransparency:GetValue(req).Value or 1
-    local models = self:GetData("models")
+    local models = self:GetData("models") or {}
     local selectedModel = models[modelIndex + 1] or "u2netp"
     local r = InBackground_R:GetValue(req).Value or 1.0
     local g = InBackground_G:GetValue(req).Value or 1.0
@@ -398,11 +393,11 @@ function Process(req)
         IMG_Quality = not req:IsQuick(),
         IMG_MotionBlurQuality = not req:IsNoMotionBlur(),
     }
-   
+
     if not req:IsStampOnly() then
         imgattrs.IMG_ProxyScale = 1
     end
-    
+
     if SourceDepth ~= 0 then
         imgattrs.IMG_Depth = SourceDepth
     end
@@ -415,20 +410,20 @@ function Process(req)
         src1 = ProcessWithPython(src1, pythonScriptPath, selectedModel, req.Time)
 
         if keepTransparency == 0 and src1 then
-            local bg = Image(imgattrs)
-            local p = Pixel({R=r, G=g, B=b, A=1.0})
+            local bg = Image({IMG_Like = src1})
+            local p = Pixel({ R = r, G = g, B = b, A = 1.0 })
             bg:Fill(p)
-            bg:Merge(src1, {MO_ApplyMode = "Merge", MO_X = 0.5, MO_Y = 0.5})
+            bg:Merge(src1, { MO_ApplyMode = "Merge", MO_X = 0.5, MO_Y = 0.5 })
             src1 = bg
         end
 
-        InProgress:SetSource(Text("[COMPLETE] Frame "..req.Time),0,0)
+        InProgress:SetSource(Text("[COMPLETE] Frame " .. req.Time), 0, 0)
     else
         src1 = Image(imgattrs)
-        local p = Pixel({R=0,G=0,B=0,A=0})
+        local p = Pixel({ R = 0, G = 0, B = 0, A = 0 })
         src1:Fill(p)
     end
-    
+
     OutImage:Set(req, src1)
 end
 
@@ -438,7 +433,7 @@ function log(...)
         return
     end
 
-    local args = {...}
+    local args = { ... }
     local out = {}
     for i = 1, #args do
         out[#out + 1] = tostring(args[i])
@@ -447,104 +442,193 @@ function log(...)
     print(table.concat(out, " "))
 end
 
+local function clamp255(v)
+    if v < 0 then v = 0 elseif v > 1 then v = 1 end
+    return math.floor(v * 255 + 0.5)
+end
+
+local function SaveViaClip(img, path)
+    local ok, err = pcall(function()
+        local c = Clip(path, true)
+        if not c then error("Clip() returned nil") end
+        pcall(function() c:Open() end)
+        local r = c:PutFrame(0, img)
+        pcall(function() c:Close() end)
+        if r == false then error("PutFrame returned false") end
+    end)
+    if not ok then print("[Rembg] Clip write error: " .. tostring(err)) end
+    local f = io.open(path, "rb")
+    if f then f:close() return true end
+    return false
+end
+
+local function SaveAsPPM(img, path)
+    local f, err = io.open(path, "wb")
+    if not f then
+        print("[Rembg] Cannot open for writing: " .. path .. " (" .. tostring(err) .. ")")
+        return false
+    end
+    local w, h = img.Width, img.Height
+    f:write(string.format("P6\n%d %d\n255\n", w, h))
+    local p, char, row = Pixel(), string.char, {}
+    for y = h - 1, 0, -1 do              -- Fusion y=0 is the bottom row
+        for x = 0, w - 1 do
+            img:GetPixel(x, y, p)
+            row[x + 1] = char(clamp255(p.R), clamp255(p.G), clamp255(p.B))
+        end
+        f:write(table.concat(row, "", 1, w))
+    end
+    f:close()
+    return true
+end
+
+local ffi = require("ffi")
+pcall(ffi.cdef, [[
+typedef struct {
+    uint32_t cb; void* lpReserved; void* lpDesktop; void* lpTitle;
+    uint32_t dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+    uint16_t wShowWindow, cbReserved2; void* lpReserved2;
+    void* hStdInput; void* hStdOutput; void* hStdError;
+} RB_STARTUPINFOW;
+typedef struct { void* hProcess; void* hThread; uint32_t dwProcessId; uint32_t dwThreadId; } RB_PROCESS_INFORMATION;
+int CreateProcessW(const uint16_t*, uint16_t*, void*, void*, int, uint32_t, void*, const uint16_t*, RB_STARTUPINFOW*, RB_PROCESS_INFORMATION*);
+uint32_t WaitForSingleObject(void*, uint32_t);
+int GetExitCodeProcess(void*, uint32_t*);
+int CloseHandle(void*);
+int MultiByteToWideChar(uint32_t, uint32_t, const char*, int, uint16_t*, int);
+uint32_t GetLastError(void);
+]])
+
+local function toWide(s)
+    local n = ffi.C.MultiByteToWideChar(65001, 0, s, -1, nil, 0)
+    local buf = ffi.new("uint16_t[?]", n)
+    ffi.C.MultiByteToWideChar(65001, 0, s, -1, buf, n)
+    return buf
+end
+
+local function RunHidden(cmdline)
+    local si = ffi.new("RB_STARTUPINFOW")
+    si.cb = ffi.sizeof(si)
+    local pi = ffi.new("RB_PROCESS_INFORMATION")
+    local CREATE_NO_WINDOW = 0x08000000
+    if ffi.C.CreateProcessW(nil, toWide(cmdline), nil, nil, 0, CREATE_NO_WINDOW, nil, nil, si, pi) == 0 then
+        return nil, "CreateProcessW failed, error " .. tonumber(ffi.C.GetLastError())
+    end
+    ffi.C.WaitForSingleObject(pi.hProcess, 0xFFFFFFFF)
+    local code = ffi.new("uint32_t[1]")
+    ffi.C.GetExitCodeProcess(pi.hProcess, code)
+    ffi.C.CloseHandle(pi.hThread)
+    ffi.C.CloseHandle(pi.hProcess)
+    return tonumber(code[0])
+end
+
+-- Runs a command and returns its combined stdout/stderr.
+local function RunCommand(command, logPath)
+    if jit.os ~= "Windows" then
+        local h = io.popen(command)
+        if not h then return "", "io.popen failed" end
+        local out = h:read("*a"); h:close()
+        return out
+    end
+    local comspec = os.getenv("ComSpec") or "cmd.exe"
+    local cmdline = string.format('"%s" /d /s /c "%s > "%s" 2>&1"', comspec, command, logPath)
+    local code, err = RunHidden(cmdline)
+    if not code then return "", err end
+    local f = io.open(logPath, "r")
+    local out = f and f:read("*a") or ""
+    if f then f:close() end
+    if code ~= 0 then out = out .. "\n[exit code " .. code .. "]" end
+    return out
+end
+
 function ProcessWithPython(inputImage, scriptPath, model, frameTime)
-    -- Python subprocess execution
-
-    local tempDir = self.Comp:MapPath("Temp:/")
+    local tempDir = self.Comp:MapPath("Temp:/"):gsub("[/\\]+$", "")
     local timeStamp = tostring(frameTime):gsub("%.", "_")
-    local sep = package.config:sub(1,1)
-    local inputImagePath = tempDir .. sep .. "rembg_input_" .. timeStamp
-    local outputImagePath = tempDir .. sep .. "rembg_output_" .. timeStamp
-    
-    -- Save the input image using Fusion Clip method
-    local input_clip = Clip(inputImagePath .. ".jpg", true)
-    input_clip:Open()
+    local inputImagePath  = tempDir .. "\\rembg_input_" .. timeStamp .. ".ppm"
+    local outputImagePath = tempDir .. "\\rembg_output_" .. timeStamp .. ".png"
 
-    local putResult = input_clip:PutFrame(frameTime, inputImage)
-    input_clip:Close()
-    
-    if not putResult then
-        print("Failed to save input image to: " .. inputImagePath .. ".jpg")
+    if not SaveAsPPM(inputImage, inputImagePath) then
+        print("Failed to save input image to: " .. inputImagePath)
         return inputImage
     end
-    
-    -- Build Python command
 
-    local command
+    -- Build Python command
     local isWindows = os.getenv("OS") and string.find(os.getenv("OS"), "Windows")
     local isMac = jit and jit.os == "OSX"
     local isLinux = not isWindows and not isMac
 
     local pythonpath = self:GetData("python_path")
     local default_py = self:GetData("default_pyexe") or "python"
-    local pyexe = pythonpath and pythonpath:match("%S+") or default_py
+    local pyexe = default_py
+    if pythonpath then
+        local trimmed = pythonpath:match("^%s*(.-)%s*$")
+        if trimmed ~= "" then pyexe = trimmed end
+    end
     if pyexe == "pythonw" and default_py == "python" then
         pyexe = "python"
     end
-   
+
+    local command
     if isWindows then
-        command = string.format('start /B /MIN %s "%s" "%s.jpg" "%s.png" "%s"', 
+        -- Prefer the venv next to the fuse when it exists
+        local venvPy = self.Comp:MapPath("Fuses:/Rembg/.venv/Scripts/python.exe"):gsub("/", "\\")
+        if bmd.fileexists(venvPy) then
+            pyexe = venvPy
+        end
+        command = string.format('"%s" "%s" "%s" "%s" "%s"',
             pyexe, scriptPath, inputImagePath, outputImagePath, model)
+        -- (or your uv equivalent, e.g. '"uv" run --project "..." "%s" ...')
     elseif isMac then
-        command = string.format('/bin/zsh -l -c "%s \\"%s\\" \\"%s.jpg\\" \\"%s.png\\" \\"%s\\""',
+        command = string.format('/bin/zsh -l -c "%s \\"%s\\" \\"%s\\" \\"%s\\" \\"%s\\" 2>&1"',
             pyexe, scriptPath, inputImagePath, outputImagePath, model)
     else
-        command = string.format('%s "%s" "%s.jpg" "%s.png" "%s"', 
+        command = string.format('%s "%s" "%s" "%s" "%s" 2>&1',
             pyexe, scriptPath, inputImagePath, outputImagePath, model)
     end
 
-    -- Execute Python script
-    local handle = io.popen(command .. " 2>&1") 
-    local result = ""
+    local logPath = tempDir .. "\\rembg_log_" .. timeStamp .. ".txt"
+    local result, runErr = RunCommand(command, logPath)
     local executionSuccess = false
-    
-    if handle then
-        result = handle:read("*a")
-        handle:close()
-        executionSuccess = result and result:find("%[COMPLETE%]") ~= nil
-        
-        if executionSuccess then
-            log("Python script executed successfully")
-            if result and result ~= "" then
-                log("Python output:", result)
-            end
-        else
-            log("Python script failed with error:", result)
-        end
-    else
-        log("Failed to execute Python script")
-    end
-    
-    -- Load processed image if execution was successful
-    local processedImage = inputImage  
-    
+    local f = io.open(outputImagePath, "rb")
+    if f then f:close(); executionSuccess = true end
+
     if executionSuccess then
-        local outputFile = io.open(outputImagePath .. ".png", "r")
+        log("Python script executed successfully")
+        if result ~= "" then log("Python output:", result) end
+    else
+        print("[Rembg] Python failed:\n" .. tostring(runErr or result))
+    end
+
+    -- Load processed image if execution was successful
+    local processedImage = inputImage
+
+    if executionSuccess then
+        local outputFile = io.open(outputImagePath, "r")
         if outputFile then
             outputFile:close()
-            
-            -- Load the processed image 
-            local mappedPath = self.Comp:MapPath(outputImagePath .. ".png")
+
+            local mappedPath = self.Comp:MapPath(outputImagePath)
             local output_clip = Clip(mappedPath, false)
-            output_clip:Open()
-            local loadedImage = output_clip:GetFrame(0)
-            output_clip:Close()
-            
-            if loadedImage then
-                processedImage = loadedImage
-                log("Successfully loaded processed image")
-            else
-                log("Failed to load processed image from: " .. mappedPath)
+            if output_clip then
+                output_clip:Open()
+                local loadedImage = output_clip:GetFrame(0)
+                output_clip:Close()
+
+                if loadedImage then
+                    processedImage = loadedImage
+                    log("Successfully loaded processed image")
+                else
+                    log("Failed to load processed image from: " .. mappedPath)
+                end
             end
         else
-            log("Output image file not found: " .. outputImagePath .. ".png")
+            log("Output image file not found: " .. outputImagePath)
         end
     end
-    
+
     -- Clean up temporary files
-    pcall(function() os.remove(inputImagePath .. ".jpg") end)
-    pcall(function() os.remove(outputImagePath .. ".png") end)
+    pcall(function() os.remove(inputImagePath) end)
+    pcall(function() os.remove(outputImagePath) end)
 
     return processedImage
-
 end
