@@ -520,17 +520,21 @@ local function GetFFI()
     return ffi
 end
 
-local IS_WINDOWS = package.config:sub(1, 1) == "\\"
+-- Evaluated on use: like require(), the package table is not available while
+-- Resolve registers fuses at startup, so no top-level code may touch it.
+local function IsWindows()
+    return package.config:sub(1, 1) == "\\"
+end
 
 local function SleepMs(ms)
     local ffi = GetFFI()
-    if IS_WINDOWS then ffi.C.Sleep(ms) else ffi.C.usleep(ms * 1000) end
+    if IsWindows() then ffi.C.Sleep(ms) else ffi.C.usleep(ms * 1000) end
 end
 
 -- Wall-clock seconds with millisecond resolution (os.time is whole seconds).
 local function Now()
     local ffi = GetFFI()
-    if IS_WINDOWS then
+    if IsWindows() then
         return tonumber(ffi.C.GetTickCount64()) / 1000
     end
     local tv = ffi.new("RB_timeval")
@@ -620,7 +624,7 @@ end
 local function StartWorker(tool, scriptPath, spool)
     local pyexe, isVenv = PythonFor(tool)
     local spoolArg = spool:gsub("[/\\]$", "")
-    if IS_WINDOWS then
+    if IsWindows() then
         local ok, err = SpawnHidden(string.format('"%s" "%s" --serve "%s"', pyexe, scriptPath, spoolArg))
         if not ok then print("[Rembg] Could not start worker: " .. err) end
         return ok
