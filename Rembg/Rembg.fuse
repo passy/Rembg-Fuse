@@ -309,8 +309,11 @@ function NotifyChanged(inp, param, time)
             if isWindows then
                 command = 'start "" /MIN "' .. (venvPy or pyexe) .. '" "' .. setupPath .. '"'
             elseif venvPy then
-                -- Absolute interpreter path: no login shell needed; run in background
-                command = '"' .. venvPy .. '" "' .. setupPath .. '" &'
+                -- Absolute interpreter path: no login shell needed; run in background.
+                -- Output goes to a log, otherwise startup errors vanish silently.
+                local logPath = self.Comp:MapPath("Temp:/"):gsub("/+$", "") .. "/rembg_manager.log"
+                print("Setup manager log: " .. logPath)
+                command = '"' .. venvPy .. '" "' .. setupPath .. '" > "' .. logPath .. '" 2>&1 &'
             elseif isMac then
                 command = '/bin/zsh -l -c "' .. pyexe .. ' \\"' .. setupPath .. '\\""'
             elseif isLinux then

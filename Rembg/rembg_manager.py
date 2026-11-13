@@ -17,6 +17,34 @@ if sys.stdout is None:
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
+
+def _point_tcl_at_base_python():
+    """uv-managed (python-build-standalone) Pythons look for Tcl/Tk relative to
+    the interpreter, which fails inside a venv ("Can't find a usable init.tcl").
+    Point TCL_LIBRARY/TK_LIBRARY at the base installation if they exist there."""
+    if sys.prefix == sys.base_prefix:
+        return
+    import glob
+
+    for var, pattern, marker in (
+        ("TCL_LIBRARY", "tcl[89].*", "init.tcl"),
+        ("TK_LIBRARY", "tk[89].*", "tk.tcl"),
+    ):
+        if var in os.environ:
+            continue
+        for sub in ("lib", "tcl"):  # macOS/Linux use lib/, Windows uses tcl/
+            matches = [
+                d
+                for d in sorted(glob.glob(os.path.join(sys.base_prefix, sub, pattern)))
+                if os.path.isfile(os.path.join(d, marker))
+            ]
+            if matches:
+                os.environ[var] = matches[-1]
+                break
+
+
+_point_tcl_at_base_python()
+
 import io
 import shutil
 import subprocess
