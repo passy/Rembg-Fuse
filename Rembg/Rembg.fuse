@@ -490,26 +490,52 @@ local function SaveAsPPM(img, path)
 end
 
 -- Loaded lazily: require() is not available while Resolve registers fuses at startup.
+-- Each declaration gets its own pcall: reloading the fuse keeps the old ones,
+-- and redefining any of them would otherwise abort the rest of the block.
 local ffi
+local FFI_DECLARATIONS = {
+    [[typedef struct {
+        uint32_t cb; void* lpReserved; void* lpDesktop; void* lpTitle;
+        uint32_t dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+        uint16_t wShowWindow, cbReserved2; void* lpReserved2;
+        void* hStdInput; void* hStdOutput; void* hStdError;
+    } RB_STARTUPINFOW;]],
+    [[typedef struct { void* hProcess; void* hThread; uint32_t dwProcessId; uint32_t dwThreadId; } RB_PROCESS_INFORMATION;]],
+    [[int CreateProcessW(const uint16_t*, uint16_t*, void*, void*, int, uint32_t, void*, const uint16_t*, RB_STARTUPINFOW*, RB_PROCESS_INFORMATION*);]],
+    [[int CloseHandle(void*);]],
+    [[int MultiByteToWideChar(uint32_t, uint32_t, const char*, int, uint16_t*, int);]],
+    [[uint32_t GetLastError(void);]],
+    [[void Sleep(uint32_t);]],
+    [[uint64_t GetTickCount64(void);]],
+    [[int usleep(uint32_t);]],
+    [[typedef struct { long tv_sec; int32_t tv_usec; } RB_timeval;]],
+    [[int gettimeofday(RB_timeval*, void*);]],
+}
 local function GetFFI()
     if ffi then return ffi end
     ffi = require("ffi")
-    pcall(ffi.cdef, [[
-typedef struct {
-    uint32_t cb; void* lpReserved; void* lpDesktop; void* lpTitle;
-    uint32_t dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
-    uint16_t wShowWindow, cbReserved2; void* lpReserved2;
-    void* hStdInput; void* hStdOutput; void* hStdError;
-} RB_STARTUPINFOW;
-typedef struct { void* hProcess; void* hThread; uint32_t dwProcessId; uint32_t dwThreadId; } RB_PROCESS_INFORMATION;
-int CreateProcessW(const uint16_t*, uint16_t*, void*, void*, int, uint32_t, void*, const uint16_t*, RB_STARTUPINFOW*, RB_PROCESS_INFORMATION*);
-uint32_t WaitForSingleObject(void*, uint32_t);
-int GetExitCodeProcess(void*, uint32_t*);
-int CloseHandle(void*);
-int MultiByteToWideChar(uint32_t, uint32_t, const char*, int, uint16_t*, int);
-uint32_t GetLastError(void);
-]])
+    for _, declaration in ipairs(FFI_DECLARATIONS) do
+        pcall(ffi.cdef, declaration)
+    end
     return ffi
+end
+
+local IS_WINDOWS = package.config:sub(1, 1) == "\\"
+
+local function SleepMs(ms)
+    local ffi = GetFFI()
+    if IS_WINDOWS then ffi.C.Sleep(ms) else ffi.C.usleep(ms * 1000) end
+end
+
+-- Wall-clock seconds with millisecond resolution (os.time is whole seconds).
+local function Now()
+    local ffi = GetFFI()
+    if IS_WINDOWS then
+        return tonumber(ffi.C.GetTickCount64()) / 1000
+    end
+    local tv = ffi.new("RB_timeval")
+    ffi.C.gettimeofday(tv, nil)
+    return tonumber(tv.tv_sec) + tonumber(tv.tv_usec) / 1e6
 end
 
 local function toWide(s)
@@ -520,131 +546,194 @@ local function toWide(s)
     return buf
 end
 
-local function RunHidden(cmdline)
+-- Starts a process without a console window and without waiting for it (Windows).
+local function SpawnHidden(cmdline)
     local ffi = GetFFI()
     local si = ffi.new("RB_STARTUPINFOW")
     si.cb = ffi.sizeof(si)
     local pi = ffi.new("RB_PROCESS_INFORMATION")
     local CREATE_NO_WINDOW = 0x08000000
     if ffi.C.CreateProcessW(nil, toWide(cmdline), nil, nil, 0, CREATE_NO_WINDOW, nil, nil, si, pi) == 0 then
-        return nil, "CreateProcessW failed, error " .. tonumber(ffi.C.GetLastError())
+        return false, "CreateProcessW failed, error " .. tonumber(ffi.C.GetLastError())
     end
-    ffi.C.WaitForSingleObject(pi.hProcess, 0xFFFFFFFF)
-    local code = ffi.new("uint32_t[1]")
-    ffi.C.GetExitCodeProcess(pi.hProcess, code)
     ffi.C.CloseHandle(pi.hThread)
     ffi.C.CloseHandle(pi.hProcess)
-    return tonumber(code[0])
+    return true
 end
 
--- Runs a command and returns its combined stdout/stderr.
-local function RunCommand(command, logPath)
-    if jit.os ~= "Windows" then
-        local h = io.popen(command)
-        if not h then return "", "io.popen failed" end
-        local out = h:read("*a"); h:close()
-        return out
-    end
-    local comspec = os.getenv("ComSpec") or "cmd.exe"
-    local cmdline = string.format('"%s" /d /s /c "%s > "%s" 2>&1"', comspec, command, logPath)
-    local code, err = RunHidden(cmdline)
-    if not code then return "", err end
-    local f = io.open(logPath, "r")
-    local out = f and f:read("*a") or ""
-    if f then f:close() end
-    if code ~= 0 then out = out .. "\n[exit code " .. code .. "]" end
-    return out
+local function ReadFile(path)
+    local f = io.open(path, "rb")
+    if not f then return nil end
+    local data = f:read("*a")
+    f:close()
+    return data
 end
 
-function ProcessWithPython(inputImage, scriptPath, model, frameTime)
-    local tempDir = self.Comp:MapPath("Temp:/"):gsub("[/\\]+$", "")
-    local timeStamp = tostring(frameTime):gsub("%.", "_")
-    local sep = package.config:sub(1, 1)
-    local inputImagePath  = tempDir .. sep .. "rembg_input_" .. timeStamp .. ".ppm"
-    local outputImagePath = tempDir .. sep .. "rembg_output_" .. timeStamp .. ".png"
+local function WriteFile(path, data)
+    local f = io.open(path, "wb")
+    if not f then return false end
+    f:write(data)
+    f:close()
+    return true
+end
 
-    if not SaveAsPPM(inputImage, inputImagePath) then
-        print("Failed to save input image to: " .. inputImagePath)
-        return inputImage
-    end
+-- ---------------------------------------------------------------------------
+-- Shared worker
+-- A single long-lived Python process (bg_remover.py --serve) keeps the models
+-- loaded on the GPU. Frames are exchanged through files in a spool folder;
+-- see the protocol description at the top of bg_remover.py.
+-- ---------------------------------------------------------------------------
 
-    -- Build Python command
-    local isWindows = os.getenv("OS") and string.find(os.getenv("OS"), "Windows")
-    local isMac = jit and jit.os == "OSX"
-    local isLinux = not isWindows and not isMac
+local WORKER_START_TIMEOUT = 30  -- seconds until the worker must show a heartbeat
+local REQUEST_TIMEOUT = 600      -- seconds per frame (first use may download a model)
+local warnedAboutCPU = false
 
-    local pythonpath = self:GetData("python_path")
-    local default_py = self:GetData("default_pyexe") or "python"
+local function WorkerAlive(spool)
+    local beat = ReadFile(spool .. "worker.heartbeat")
+    local t = beat and tonumber(beat:match("^(%d+)"))
+    return t ~= nil and os.time() - t <= 5
+end
+
+local function WorkerLogTail(spool)
+    local text = ReadFile(spool .. "worker.log") or "(no worker.log)"
+    return text:sub(-2000)
+end
+
+-- Picks the interpreter: the .venv next to the fuse, else the configured one.
+local function PythonFor(tool)
+    local venvPy = FindVenvPython(tool.Comp, "python.exe")
+    if venvPy then return venvPy, true end
+
+    local default_py = tool:GetData("default_pyexe") or "python"
     local pyexe = default_py
-    if pythonpath then
-        local trimmed = pythonpath:match("^%s*(.-)%s*$")
+    local configured = tool:GetData("python_path")
+    if configured then
+        local trimmed = configured:match("^%s*(.-)%s*$")
         if trimmed ~= "" then pyexe = trimmed end
     end
     if pyexe == "pythonw" and default_py == "python" then
         pyexe = "python"
     end
+    return pyexe, false
+end
 
+local function StartWorker(tool, scriptPath, spool)
+    local pyexe, isVenv = PythonFor(tool)
+    local spoolArg = spool:gsub("[/\\]$", "")
+    if IS_WINDOWS then
+        local ok, err = SpawnHidden(string.format('"%s" "%s" --serve "%s"', pyexe, scriptPath, spoolArg))
+        if not ok then print("[Rembg] Could not start worker: " .. err) end
+        return ok
+    end
     local command
-    local venvPy = FindVenvPython(self.Comp, "python.exe")
-    if isWindows then
-        command = string.format('"%s" "%s" "%s" "%s" "%s"',
-            venvPy or pyexe, scriptPath, inputImagePath, outputImagePath, model)
-    elseif venvPy then
-        -- Absolute interpreter path, so no login shell is needed to find Python
-        command = string.format('"%s" "%s" "%s" "%s" "%s" 2>&1',
-            venvPy, scriptPath, inputImagePath, outputImagePath, model)
-    elseif isMac then
-        command = string.format('/bin/zsh -l -c "%s \\"%s\\" \\"%s\\" \\"%s\\" \\"%s\\" 2>&1"',
-            pyexe, scriptPath, inputImagePath, outputImagePath, model)
+    if isVenv then
+        command = string.format('"%s" "%s" --serve "%s" >/dev/null 2>&1 &', pyexe, scriptPath, spoolArg)
     else
-        command = string.format('%s "%s" "%s" "%s" "%s" 2>&1',
-            pyexe, scriptPath, inputImagePath, outputImagePath, model)
+        -- No venv: use a login shell so the user's PATH can find python3
+        command = string.format('/bin/zsh -l -c "%s \\"%s\\" --serve \\"%s\\"" >/dev/null 2>&1 &',
+            pyexe, scriptPath, spoolArg)
+    end
+    os.execute(command)
+    return true
+end
+
+local function EnsureWorker(tool, scriptPath, spool)
+    if WorkerAlive(spool) then return true end
+    print("[Rembg] Starting background worker...")
+    if not StartWorker(tool, scriptPath, spool) then return false end
+    local deadline = Now() + WORKER_START_TIMEOUT
+    while Now() < deadline do
+        if WorkerAlive(spool) then return true end
+        SleepMs(50)
+    end
+    print("[Rembg] Worker did not start. worker.log:\n" .. WorkerLogTail(spool))
+    return false
+end
+
+function ProcessWithPython(inputImage, scriptPath, model, frameTime)
+    local sep = package.config:sub(1, 1)
+    local spool = self.Comp:MapPath("Temp:/"):gsub("[/\\]+$", "") .. sep .. "rembg_spool" .. sep
+    if not bmd.direxists(spool) then
+        bmd.createdir(spool)
     end
 
-    local logPath = tempDir .. sep .. "rembg_log_" .. timeStamp .. ".txt"
-    local result, runErr = RunCommand(command, logPath)
-    local executionSuccess = false
-    local f = io.open(outputImagePath, "rb")
-    if f then f:close(); executionSuccess = true end
-
-    if executionSuccess then
-        log("Python script executed successfully")
-        if result ~= "" then log("Python output:", result) end
-    else
-        print("[Rembg] Python failed:\n" .. tostring(runErr or result))
+    if not EnsureWorker(self, scriptPath, spool) then
+        return inputImage
     end
 
-    -- Load processed image if execution was successful
-    local processedImage = inputImage
+    local id = string.format("%d_%d_%d", os.time(), math.floor(frameTime * 1000), math.random(1, 1e9))
+    local inputPath = spool .. id .. ".ppm"
+    local outputPath = spool .. id .. ".png"
+    local base = spool .. id
 
-    if executionSuccess then
-        local outputFile = io.open(outputImagePath, "r")
-        if outputFile then
-            outputFile:close()
+    local t0 = Now()
+    if not SaveAsPPM(inputImage, inputPath) then
+        print("Failed to save input image to: " .. inputPath)
+        return inputImage
+    end
+    local t1 = Now()
 
-            local mappedPath = self.Comp:MapPath(outputImagePath)
-            local output_clip = Clip(mappedPath, false)
-            if output_clip then
-                output_clip:Open()
-                local loadedImage = output_clip:GetFrame(0)
-                output_clip:Close()
+    -- Write the request under a temporary name, then rename it into place so
+    -- the worker never sees a half-written request.
+    if not WriteFile(base .. ".req.tmp", inputPath .. "\n" .. outputPath .. "\n" .. model .. "\n")
+        or not os.rename(base .. ".req.tmp", base .. ".req") then
+        print("[Rembg] Could not write request to " .. spool)
+        os.remove(inputPath)
+        return inputImage
+    end
 
-                if loadedImage then
-                    processedImage = loadedImage
-                    log("Successfully loaded processed image")
-                else
-                    log("Failed to load processed image from: " .. mappedPath)
-                end
-            end
-        else
-            log("Output image file not found: " .. outputImagePath)
+    local reply, failure
+    local deadline = Now() + REQUEST_TIMEOUT
+    local nextAliveCheck = Now() + 1
+    while true do
+        reply = ReadFile(base .. ".done")
+        if reply then break end
+        failure = ReadFile(base .. ".err")
+        if failure then break end
+        if Now() > deadline then
+            failure = "timed out after " .. REQUEST_TIMEOUT .. "s"
+            break
         end
+        if Now() > nextAliveCheck then
+            if not WorkerAlive(spool) then
+                failure = "worker stopped. worker.log:\n" .. WorkerLogTail(spool)
+                break
+            end
+            nextAliveCheck = Now() + 1
+        end
+        SleepMs(5)
+    end
+    local t2 = Now()
+
+    local processedImage = inputImage
+    if reply then
+        local output_clip = Clip(outputPath, false)
+        if output_clip then
+            output_clip:Open()
+            local loadedImage = output_clip:GetFrame(0)
+            output_clip:Close()
+            if loadedImage then
+                processedImage = loadedImage
+            else
+                print("[Rembg] Failed to load processed image from: " .. outputPath)
+            end
+        end
+
+        local provider, seconds = reply:match("^ok (%S+) (%S+)")
+        if provider == "CPUExecutionProvider" and not warnedAboutCPU then
+            warnedAboutCPU = true
+            print("[Rembg] WARNING: the model is running on the CPU, not the GPU. See " .. spool .. "worker.log")
+        end
+        log(string.format("[Rembg] frame %s: write %.2fs, model %.2fs (%s), wait %.2fs, read %.2fs",
+            tostring(frameTime), t1 - t0, tonumber(seconds) or 0, tostring(provider), t2 - t1, Now() - t2))
+    else
+        print("[Rembg] Frame " .. tostring(frameTime) .. " failed: " .. tostring(failure))
     end
 
-    -- Clean up temporary files
-    pcall(function() os.remove(inputImagePath) end)
-    pcall(function() os.remove(outputImagePath) end)
-    pcall(function() os.remove(logPath) end)
+    -- Clean up this frame's files
+    for _, suffix in ipairs({ ".ppm", ".png", ".done", ".err", ".req" }) do
+        os.remove(base .. suffix)
+    end
 
     return processedImage
 end
